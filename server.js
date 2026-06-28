@@ -162,7 +162,7 @@ server.listen(WEB_PORT, '0.0.0.0', () => {
 // ==========================================
 // 【引擎 3】独立代理服务，完美取代 esim_proxy.php (端口 3300)
 // ==========================================
-proxyApp.all('/esim_proxy.php', express.text({ type: '*/*' }), (req, res) => {
+proxyApp.all('/esim_proxy', express.text({ type: '*/*' }), (req, res) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "*");
 
@@ -203,6 +203,6 @@ proxyApp.all('/esim_proxy.php', express.text({ type: '*/*' }), (req, res) => {
 });
 
 proxyApp.listen(PROXY_PORT, '0.0.0.0', () => {
-    console.log(`🌐 eSIM 通知代理服务启动成功 (VPS_IP:${PROXY_PORT}/esim_proxy.php)`);
+    console.log(`🌐 eSIM 通知代理服务启动成功 (VPS_IP:${PROXY_PORT}/esim_proxy)`);
     console.log(`===========================================`);
 });
