@@ -2,56 +2,93 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { spawn } = require('child_process');
-const https = require('https'); // 【新增】用于代理引擎发起底层 HTTPS 请求
+const https = require('https');
 
 // ==========================================
-// 读取环境变量，实现配置与代码分离！
+// 读取环境变量
 // ==========================================
 const WEB_PORT = process.env.WEB_PORT || 3200;
 const TUNNEL_PORT = process.env.TUNNEL_PORT || 3100;
-const PROXY_PORT = process.env.PROXY_PORT || 3300; // 【新增】代理服务端口
+const PROXY_PORT = process.env.PROXY_PORT || 3300;
 
-// ==========================================
-// 实例化两大服务引擎
-// ==========================================
-const app = express();           // 负责 3200 Web 端口
-const proxyApp = express();      // 负责 3300 代理端口
+// 【新增】安全验证 Token（你以后可以在 pm2 中修改它，默认是 esim123）
+const API_TOKEN = process.env.API_TOKEN || 'esim123';
 
+const app = express();
+const proxyApp = express();
 const server = http.createServer(app);
 const io = new Server(server);
 let isDeviceReady = false;
 
 // ==========================================
-// 【引擎 1】Node.js 动态管理 socat 透传 (端口 3100)
+// 【引擎 1】Node.js 动态管理 socat (带 Token 与静默销毁)
 // ==========================================
 let socatProcess = null;
+let idleTimeout = null;
+const IDLE_TIME_MS = 5 * 60 * 1000; // 5分钟无操作超时
 
-function startSocat() {
+// 彻底释放隧道函数
+function killSocat() {
     if (socatProcess) {
-        try { socatProcess.kill(); } catch (e) {}
+        try { socatProcess.kill('SIGKILL'); } catch (e) {}
+        socatProcess = null;
+        console.log('🛑 socat 隧道已强制释放，串口控制权已归还给模组！');
     }
-    console.log(`🔗 正在建立全新的 socat 隧道 (监听端口: ${TUNNEL_PORT})，等待设备接入...`);
-    
-    socatProcess = spawn('socat', ['pty,link=/dev/ttyV0,raw,echo=0', `tcp-listen:${TUNNEL_PORT},reuseaddr`]);
+    if (idleTimeout) {
+        clearTimeout(idleTimeout);
+        idleTimeout = null;
+    }
+}
+
+// 重置 5 分钟静默倒计时
+function resetIdleTimeout() {
+    if (idleTimeout) clearTimeout(idleTimeout);
+    idleTimeout = setTimeout(() => {
+        console.log('⏳ 触发静默保护：超过 5 分钟无操作，自动断开透传');
+        killSocat();
+        io.emit('log', '\n⏳ [系统保护] 超过 5 分钟无任何写卡/查询操作，云端已自动彻底释放透传隧道，归还串口！\n');
+        io.emit('device_disconnected'); // 通知前端更新 UI 状态
+    }, IDLE_TIME_MS);
+}
+
+// 启动隧道
+function startSocat() {
+    killSocat(); // 启动前先清理干净旧进程
+    console.log(`🔗 Token 验证通过！正在建立全新的 socat 隧道 (端口: ${TUNNEL_PORT})...`);
+
+    socatProcess = spawn('socat', ['-d', '-d', 'pty,link=/dev/ttyV0,raw,echo=0', `tcp-listen:${TUNNEL_PORT},reuseaddr`]);
 
     socatProcess.stdout.on('data', (data) => console.log(`[socat] ${data}`));
     socatProcess.stderr.on('data', (data) => console.error(`[socat ERROR] ${data}`));
 
-    // 监听死亡事件，自动重生
     socatProcess.on('close', (code) => {
-        console.log(`⚠️ socat 隧道已释放 (退出码: ${code})，1秒后准备迎接下一次连接...`);
-        setTimeout(startSocat, 1000); 
+        console.log(`⚠️ socat 隧道已退出 (代码: ${code})`);
+        socatProcess = null;
     });
-}
-startSocat();
 
-process.on('SIGINT', () => {
-    if (socatProcess) socatProcess.kill();
-    process.exit();
+    resetIdleTimeout(); // 隧道一旦启动，立刻开始 5 分钟倒计时
+}
+
+// ==========================================
+// 【新增】网页端 API：提供给按钮触发隧道启停
+// ==========================================
+app.get('/api/start_tunnel', (req, res) => {
+    const userToken = req.query.token;
+    if (userToken !== API_TOKEN) {
+        console.log(`❌ 拒绝未授权的启动请求 (尝试 Token: ${userToken})`);
+        return res.status(401).send('TOKEN_INVALID');
+    }
+    startSocat();
+    res.status(200).send('TUNNEL_STARTED');
+});
+
+app.get('/api/stop_tunnel', (req, res) => {
+    killSocat();
+    res.status(200).send('TUNNEL_STOPPED');
 });
 
 // ==========================================
-// 【引擎 2】云端 Web 控制台与 API (端口 3200)
+// 【引擎 2】云端 Web 控制台交互逻辑
 // ==========================================
 app.use(express.static('public'));
 
@@ -66,7 +103,7 @@ app.get('/api/device_disconnect', (req, res) => {
     console.log('🔗 收到底层信号：ESP32 设备已断开！');
     isDeviceReady = false; 
     io.emit('device_disconnected'); 
-    if (socatProcess) socatProcess.kill();
+    killSocat(); // 设备主动断开时，顺手彻底释放隧道
     res.status(200).send('OK');
 });
 
@@ -88,6 +125,9 @@ io.on('connection', (socket) => {
     if (isDeviceReady) socket.emit('device_ready');
     
     socket.on('run_cmd', (payload) => {
+        // 🔥 【核心功能】只要网页端发起了查询或写卡指令，立刻给倒计时“续杯” 5 分钟！
+        if (socatProcess) resetIdleTimeout(); 
+
         const cmdType = typeof payload === 'string' ? payload : payload.cmdType;
         const params = typeof payload === 'string' ? {} : (payload.params || {});
 
@@ -110,8 +150,8 @@ io.on('connection', (socket) => {
             cwd: __dirname,
             env: {
                 ...process.env,
-                LPAC_APDU: 'at',                  // 【修复】：正确指定使用 AT 串口模式
-                LPAC_APDU_AT_DEVICE: '/dev/ttyV0' // 【修复】：正确指定虚拟串口路径
+                LPAC_APDU: 'at',                 
+                LPAC_APDU_AT_DEVICE: '/dev/ttyV0'
             }
         });
 
@@ -155,18 +195,17 @@ io.on('connection', (socket) => {
 
 server.listen(WEB_PORT, '0.0.0.0', () => {
     console.log(`===========================================`);
-    console.log(`🚀 eSIM 云端 Web 平台启动成功 (VPS_IP:${WEB_PORT})`);
-    console.log(`📡 socat 透传隧道已待命 (VPS_IP:${TUNNEL_PORT})`);
+    console.log(`🚀 eSIM 云端 Web 平台已升级启动 (VPS_IP:${WEB_PORT})`);
+    console.log(`🔒 安全模式已开启：必须通过 Token 验证才能触发 socat 隧道！`);
 });
 
 // ==========================================
-// 【引擎 3】独立代理服务，完美取代 esim_proxy.php (端口 3300)
+// 【引擎 3】独立代理服务 (保持不变)
 // ==========================================
 proxyApp.all('/esim_proxy', express.text({ type: '*/*' }), (req, res) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "*");
 
-    // 浏览器直接访问的友好提示
     if (req.method !== 'POST') {
         return res.send(`<h2 style='color: green;'>✅ Node.js 独立代理引擎运行正常！(Port: ${PROXY_PORT})</h2><p>请在 ESP32 代码中使用 POST 方法向此地址发送通知数据。</p>`);
     }
@@ -175,8 +214,7 @@ proxyApp.all('/esim_proxy', express.text({ type: '*/*' }), (req, res) => {
     if (!targetHost) return res.status(400).send('Missing X-Target-Host');
 
     const targetPath = '/gsma/rsp2/es9plus/handleNotification';
-    console.log(`🌐 [代理] 正在上报至: https://${targetHost}${targetPath}`);
-
+    
     const options = {
         hostname: targetHost,
         port: 443,
@@ -188,7 +226,7 @@ proxyApp.all('/esim_proxy', express.text({ type: '*/*' }), (req, res) => {
             'User-Agent': 'gsma-rsp-lpad',
             'Content-Length': Buffer.byteLength(req.body)
         },
-        rejectUnauthorized: false // 🔥 强行无视运营商自签证书
+        rejectUnauthorized: false 
     };
 
     const proxyReq = https.request(options, (proxyRes) => {
@@ -198,7 +236,7 @@ proxyApp.all('/esim_proxy', express.text({ type: '*/*' }), (req, res) => {
     });
 
     proxyReq.on('error', (e) => res.status(502).send("Proxy Error: " + e.message));
-    proxyReq.write(req.body); // 转发原封不动的加密密文
+    proxyReq.write(req.body); 
     proxyReq.end();
 });
 
