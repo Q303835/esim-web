@@ -59,7 +59,21 @@ function startSocat() {
     socatProcess = spawn('socat', ['-d', '-d', 'pty,link=/dev/ttyV0,raw,echo=0', `tcp-listen:${TUNNEL_PORT},reuseaddr`]);
 
     socatProcess.stdout.on('data', (data) => console.log(`[socat] ${data}`));
-    socatProcess.stderr.on('data', (data) => console.error(`[socat ERROR] ${data}`));
+    
+    socatProcess.stderr.on('data', (data) => console.error(`[socat ERROR] ${data}`)); //调试才开启，打印详细日志
+
+    //     socatProcess.stderr.on('data', (data) => {
+    //     const msg = data.toString();
+    //     // 过滤：如果日志里带有 " N " (Notice) 或 " I " (Info)，就作为普通日志打印或直接忽略
+    //     if (msg.includes(' N ') || msg.includes(' I ')) {
+    //         // 如果你想彻底清净，可以把下面这行注释掉
+    //         // console.log(`[socat TRACE] ${msg.trim()}`); 
+    //     } else {
+    //         // 只有真正的警告 (W) 或错误 (E/F) 才显示为 ERROR
+    //         console.error(`[socat ERROR] ${msg.trim()}`);
+    //     }
+    // });
+
 
     socatProcess.on('close', (code) => {
         console.log(`⚠️ socat 隧道已退出 (代码: ${code})`);
