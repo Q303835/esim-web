@@ -108,7 +108,11 @@ io.on('connection', (socket) => {
 
         const lpacProcess = spawn(__dirname + '/lpac', args, {
             cwd: __dirname,
-            env: { ...process.env, APDU_INTERFACE: 'at', AT_DEVICE: '/dev/ttyV0' }
+            env: {
+                ...process.env,
+                LPAC_APDU: 'at',                  // 【修复】：正确指定使用 AT 串口模式
+                LPAC_APDU_AT_DEVICE: '/dev/ttyV0' // 【修复】：正确指定虚拟串口路径
+            }
         });
 
         let lpacOutput = ''; 
