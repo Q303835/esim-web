@@ -155,8 +155,8 @@ io.on('connection', (socket) => {
 
 server.listen(WEB_PORT, '0.0.0.0', () => {
     console.log(`===========================================`);
-    console.log(`🚀 eSIM 云端 Web 平台启动成功 (Port: ${WEB_PORT})`);
-    console.log(`📡 socat 透传隧道已待命 (Port: ${TUNNEL_PORT})`);
+    console.log(`🚀 eSIM 云端 Web 平台启动成功 (VPS_IP:${WEB_PORT})`);
+    console.log(`📡 socat 透传隧道已待命 (VPS_IP:${TUNNEL_PORT})`);
 });
 
 // ==========================================
@@ -203,6 +203,6 @@ proxyApp.all('/esim_proxy.php', express.text({ type: '*/*' }), (req, res) => {
 });
 
 proxyApp.listen(PROXY_PORT, '0.0.0.0', () => {
-    console.log(`🌐 eSIM 通知代理服务启动成功 (Port: ${PROXY_PORT})`);
+    console.log(`🌐 eSIM 通知代理服务启动成功 (VPS_IP:${PROXY_PORT}/esim_proxy.php)`);
     console.log(`===========================================`);
 });
