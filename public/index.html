@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>eSIM 云端写卡平台</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #f4f7f9; padding: 40px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { color: #333; margin-top: 0; }
+        .input-group { margin-bottom: 20px; }
+        input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-family: monospace; font-size: 16px; }
+        button { background: #0070f3; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        button:hover { background: #005bb5; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        /* 极客风终端样式 */
+        #terminal { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 8px; height: 400px; overflow-y: auto; margin-top: 20px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 eSIM 云端写卡控制台</h1>
+        <p style="color: #666;">请先在 ESP32 设备端点击“进入透传模式”，然后在此粘贴运营商提供的激活码。</p>
+        
+        <div class="input-group">
+            <input type="text" id="activationCode" placeholder="LPA:1$sm-dp-plus.com$XXXX-XXXX-XXXX">
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <button id="btnDownload" onclick="startDownload()" disabled style="background: #999; cursor: not-allowed; flex: 2;">等待设备连接隧道...</button>
+            <button id="btnEid" onclick="getEid()" disabled style="background: #999; cursor: not-allowed; flex: 1;">查看 EID</button>
+            <button id="btnList" onclick="getProfiles()" disabled style="background: #999; cursor: not-allowed; flex: 1;">读取配置列表</button>
+        </div>
+        
+        <div id="uiContainer" style="margin-bottom: 20px;"></div> 
+
+        <div id="terminal">等待指令...</div>
+    </div>
+
+<script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const terminal = document.getElementById('terminal');
+        const btn = document.getElementById('btnDownload');
+        // 【新增】：获取另外两个新按钮的元素
+        const btnEid = document.getElementById('btnEid');
+        const btnList = document.getElementById('btnList');
+
+        // 监听后端实时推过来的日志
+        socket.on('log', (msg) => {
+            terminal.textContent += msg;
+            // 自动滚动到底部
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+
+        // 监听最终状态 (写卡专用)
+        socket.on('status', (state) => {
+            btn.disabled = false;
+            btn.textContent = "设备已就绪，开始一键写卡";
+            if (state === 'success') {
+                alert("恭喜！eSIM 配置下载成功！请在设备端断开透传并启用新卡。");
+            }
+        });
+
+        // ==========================================
+        // 【新增】：监听底层设备就绪事件 (自动解锁按钮)
+        // ==========================================
+        socket.on('device_ready', () => {
+            // 1. 解锁写卡按钮 (变绿)
+            btn.disabled = false;
+            btn.style.background = '#28a745'; 
+            btn.style.cursor = 'pointer';
+            btn.textContent = "设备已就绪，开始一键写卡";
+            
+            // 2. 解锁查看 EID 按钮 (变蓝)
+            if (btnEid) {
+                btnEid.disabled = false;
+                btnEid.style.background = '#17a2b8';
+                btnEid.style.cursor = 'pointer';
+            }
+
+            // 3. 解锁读取列表按钮 (变紫)
+            if (btnList) {
+                btnList.disabled = false;
+                btnList.style.background = '#6f42c1';
+                btnList.style.cursor = 'pointer';
+            }
+
+            terminal.textContent += "✅ [系统探测] 侦测到 ESP32 设备已打通底层隧道，随时可以执行操作！\n";
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+        // ==========================================
+        // 【新增】：监听底层设备断开事件 (自动锁定按钮)
+        // ==========================================
+        socket.on('device_disconnected', () => {
+            const btn = document.getElementById('btnDownload');
+            if(btn) {
+                btn.disabled = true;
+                btn.style.background = '#999';
+                btn.style.cursor = 'not-allowed';
+                btn.textContent = "等待设备连接隧道...";
+            }
+            const btnEid = document.getElementById('btnEid');
+            if (btnEid) { btnEid.disabled = true; btnEid.style.background = '#999'; btnEid.style.cursor = 'not-allowed'; }
+            const btnList = document.getElementById('btnList');
+            if (btnList) { btnList.disabled = true; btnList.style.background = '#999'; btnList.style.cursor = 'not-allowed'; }
+
+            terminal.textContent += "⚠️ [系统探测] 侦测到 ESP32 设备已断开隧道，控制台已自动锁定。\n";
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+        // 写卡功能
+        function startDownload() {
+            const code = document.getElementById('activationCode').value.trim();
+            if (!code) { alert('请输入激活码'); return; }
+            
+            terminal.textContent = "开始建立云端安全通道...\n";
+            btn.disabled = true;
+            btn.textContent = "正在与全球运营商通信中...";
+            
+            // 把激活码发给后端，触发 lpac
+            socket.emit('run_cmd', { 
+                cmdType: 'download', 
+                params: { activationCode: code } 
+            });
+        }
+
+        // ==========================================
+        // 【新增】：触发查询 EID 和 配置列表
+        // ==========================================
+        function getEid() {
+            terminal.textContent += "\n🔍 正在请求读取芯片信息...\n";
+            terminal.scrollTop = terminal.scrollHeight;
+            socket.emit('run_cmd', 'info'); // 呼叫后端执行 info
+        }
+
+        function getProfiles() {
+            terminal.textContent += "\n📋 正在请求 eSIM 配置列表...\n";
+            terminal.scrollTop = terminal.scrollHeight;
+            socket.emit('run_cmd', 'list'); // 呼叫后端执行 profile list
+        }
+
+        // ==========================================
+        // 【可视化 UI 核心】监听结构化数据，渲染卡片
+        // ==========================================
+        socket.on('lpac_data', (result) => {
+            const ui = document.getElementById('uiContainer');
+            const data = result.payload.data;
+            if (result.payload.code !== 0) return; // 容错处理
+
+            // 1. 如果是请求 EID，渲染一个漂亮的信息条
+            if (result.cmdType === 'info') {
+                const eid = data.eidValue;
+                ui.innerHTML = `
+                <div style="background: #e9ecef; padding: 15px; border-radius: 8px; font-size: 18px; margin-bottom: 10px; border-left: 5px solid #17a2b8;">
+                    <strong>芯片 EID:</strong> <span style="font-family: monospace; color: #d63384; margin-left: 10px;">${eid}</span>
+                </div>`;
+            }
+            
+            // 2. 如果是请求列表，渲染网格卡片！
+            else if (result.cmdType === 'list') {
+                const profiles = data;
+                let html = '<div style="display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));">';
+                
+                profiles.forEach(p => {
+                    // profileState: 1 是启用，0 是禁用 (新版 lpac 返回的可能是 'enabled' / 'disabled'，做个双重兼容)
+                    const isActive = p.profileState === 1 || p.profileState === 'enabled';
+                    const stateColor = isActive ? '#28a745' : '#6c757d';
+                    const stateText = isActive ? '已启用' : '未启用';
+                    const nickname = p.profileNickname || '未命名 eSIM';
+                    const provider = p.serviceProviderName || '未知运营商';
+
+                    html += `
+                    <div style="border: 1px solid #ddd; border-radius: 10px; padding: 15px; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <strong style="font-size: 18px;">${nickname}</strong>
+                            <span style="background: ${stateColor}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px;">${stateText}</span>
+                        </div>
+                        <div style="font-size: 14px; color: #555; margin-bottom: 5px;"><strong>🏢 运营商:</strong> ${provider}</div>
+                        <div style="font-size: 12px; color: #888; margin-bottom: 15px; font-family: monospace;">🆔 ICCID: ${p.iccid}</div>
+                        <div style="display: flex; gap: 8px;">
+                            ${isActive
+                                ? `<button onclick="actionProfile('${p.iccid}', 'disable')" style="flex:1; padding: 8px; background: #ffc107; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: #333;">禁用</button>`
+                                : `<button onclick="actionProfile('${p.iccid}', 'enable')" style="flex:1; padding: 8px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">启用</button>`
+                            }
+                            <button onclick="renameProfile('${p.iccid}', '${nickname}')" style="flex:1; padding: 8px; background: #17a2b8; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">改名</button>
+                            
+                            <button onclick="deleteProfile('${p.iccid}')" style="flex:1; padding: 8px; background: #dc3545; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">删除</button>
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+                ui.innerHTML = html;
+            }
+        });
+        // 【新增】监听后端发来的“操作完成”信号，精准刷新列表
+        socket.on('action_done', () => {
+            getProfiles(); 
+        });
+        // ==========================================
+        // 【新增交互】控制卡片的启用、禁用和删除
+        // ==========================================
+        function actionProfile(iccid, action) {
+            terminal.textContent += `\n⚡ 正在请求${action === 'enable' ? '启用' : '禁用'}卡片...\n`;
+            socket.emit('run_cmd', { cmdType: action, params: { iccid: iccid } });
+
+        }
+
+        function deleteProfile(iccid) {
+            if(confirm('⚠️ 极其危险！删除后该 eSIM 将彻底作废无法找回！确定删除吗？')) {
+                terminal.textContent += `\n🗑️ 正在请求删除卡片...\n`;
+                socket.emit('run_cmd', { cmdType: 'delete', params: { iccid: iccid } });
+
+            }
+        }
+
+
+        // 【新增交互】控制卡片的重命名
+
+        function renameProfile(iccid, oldName) {
+            // 弹出一个原生输入框让用户输入新名字
+            const newName = prompt(`请输入该 eSIM 的新昵称：`, oldName);
+            
+            // 如果用户点击了确定，且输入内容不为空
+            if (newName !== null && newName.trim() !== '') {
+                terminal.textContent += `\n✏️ 正在请求将卡片重命名为 [${newName.trim()}]...\n`;
+                terminal.scrollTop = terminal.scrollHeight;
+                
+                // 把指令发给 Node.js，
+                socket.emit('run_cmd', { 
+                    cmdType: 'setnickname', 
+                    params: { iccid: iccid, nickname: newName.trim() } 
+                });
+                
+
+            }
+        }
+    </script>
+</body>
+</html>
