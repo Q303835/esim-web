@@ -51,11 +51,12 @@ services:
 `docker logs -t esim-web`
 ## 看见这个就是启动成功
 ![docker部署](img/docker.png)
-在 ESP32 网页【LPA Passthrough】填：IP:3100
 
-写卡平台，用浏览器打开：http://ip:3200
+#### 在 本地ESP32 网页【LPA Passthrough】填：IP:3100
 
-ESP32 切卡，删除等，通知转发【自建代理地址】填：http://ip:3300/esim_proxy
+#### 写卡平台，用浏览器打开：http://ip:3200
+
+####  ESP32 切卡，删除等，通知转发【自建代理地址】填：http://ip:3300/esim_proxy
 
 
 ---
