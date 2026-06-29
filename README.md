@@ -1,6 +1,10 @@
-# 本项目是配套工具，补充远程写卡，VPS需要root权限
-### 通过lpac对esp32c3+ML307R DC 的esim卡进行操作
+## 本项目是配套工具，补充远程写卡，VPS需要root权限
+
 https://github.com/Q303835/sms_forwarding
+### 通过lpac对esp32c3+ML307R DC 的esim卡进行操作。
+
+![](img/done.png)
+
 # docker 部署，要root用户
 
 ## 拉取镜像
