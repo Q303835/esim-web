@@ -1,4 +1,7 @@
-# docker 部署
+# 本项目是配套工具，补充远程写卡，VPS需要root权限
+### 通过lpac对esp32c3+ML307R DC 的esim卡进行操作
+https://github.com/Q303835/sms_forwarding
+# docker 部署，要root用户
 
 ## 拉取镜像
 ```bash
@@ -51,8 +54,10 @@ services:
 ESP32 切卡，删除等，通知转发【自建代理地址】填：http://ip:3300/esim_proxy
 
 
+---
 
-# vps部署
+
+# vps部署（需要root权限）
 
 安装
 ``` bash
@@ -69,7 +74,7 @@ nodejs安装
 npm install -g pm2
 ```
 
-启动
+部署使用
 ``` bash
 git clone https://github.com/Q303835/esim-web.git 
 
@@ -77,7 +82,6 @@ cd esim-web
 
 API_TOKEN="你的复杂密码" WEB_PORT=3200 TUNNEL_PORT=3100 PROXY_PORT=3300 pm2 start server.js --name "esim-web"
 ```
-![pm2](img/pm2.png)
 
 ## 查看日志
 `pm2 logs esim-web`
