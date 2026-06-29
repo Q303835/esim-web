@@ -123,14 +123,44 @@ app.get('/api/device_disconnect', (req, res) => {
 
 function getLpacArgs(cmdType, params = {}) {
     switch (cmdType) {
+        // === 芯片管理 ===
         case 'info': return ['chip', 'info'];
+        case 'defaultsmdp': return ['chip', 'defaultsmdp', params.smdp]; // 修改芯片默认的 SM-DP+ 服务器
+
+        // === Profile (配置) 管理 ===
         case 'list': return ['profile', 'list'];
-        case 'download': return ['profile', 'download', '-a', params.activationCode];
         case 'enable': return ['profile', 'enable', params.iccid];
         case 'disable': return ['profile', 'disable', params.iccid];
         case 'delete': return ['profile', 'delete', params.iccid];
         case 'setnickname': return ['profile', 'nickname', params.iccid, params.nickname];
-        case 'notifprocess': return ['notification', 'process'];
+        
+        // 优化：支持 SM-DS 自动拉取
+        case 'discover': return ['profile', 'discover']; 
+
+        // 优化：下载功能更加健壮，支持 IMEI 和 确认码
+        case 'download': {
+            let args = ['profile', 'download', '-a', params.activationCode];
+            if (params.imei) {
+                args.push('-i', params.imei);
+            }
+            if (params.confirmCode) {
+                args.push('-c', params.confirmCode);
+            }
+            return args;
+        }
+
+        // === Notification (通知) 管理 ===
+        case 'notiflist': return ['notification', 'list']; // 获取所有待处理的通知序列号(seq)
+        
+        // 优化：支持处理单条(传入seq)或全部处理
+        case 'notifprocess': {
+            return params.seq !== undefined 
+                ? ['notification', 'process', String(params.seq)] 
+                : ['notification', 'process'];
+        }
+        
+        case 'notifremove': return ['notification', 'remove', String(params.seq)]; // 强行清理卡死的通知
+
         default: return [];
     }
 }
@@ -178,7 +208,7 @@ io.on('connection', (socket) => {
 
         lpacProcess.on('close', (code) => {
             if (code === 0) {
-                if (cmdType === 'info' || cmdType === 'list') {
+                if (cmdType === 'info' || cmdType === 'list' || cmdType === 'notiflist') {
                     try {
                         const parsedData = JSON.parse(lpacOutput.trim());
                         socket.emit('lpac_data', { cmdType: cmdType, payload: parsedData.payload });

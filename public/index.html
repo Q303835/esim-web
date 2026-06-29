@@ -32,6 +32,21 @@
         </div>
         
         <div id="uiContainer" style="margin-bottom: 20px;"></div> 
+        
+<div id="notifContainer" style="margin-bottom: 20px; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #ddd;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin-top: 0; margin-bottom: 0; color: #333;">🔔 通知管理 (Notifications)</h3>
+                <div>
+                    <button id="btnNotifList" onclick="getNotifList()" disabled style="background: #999; cursor: not-allowed; padding: 8px 15px; font-size: 14px;">查询待处理通知</button>
+                    <button id="btnNotifProcessAll" onclick="processAllNotifs()" disabled style="background: #999; cursor: not-allowed; padding: 8px 15px; font-size: 14px;">一键处理所有通知</button>
+                </div>
+            </div>
+            <p style="color: #666; font-size: 13px; margin-top: 0;">如果曾发生过断网、强行终止，请务必及时处理遗留通知，防止芯片存储爆满。</p>
+            <div id="notifTableContainer">
+                <div style="text-align: center; color: #999; padding: 20px 0;">点击上方按钮查询通知状态</div>
+            </div>
+        </div>
+
 
         <div id="terminal">等待指令...</div>
     </div>
@@ -65,6 +80,8 @@
         // 【新增】：监听底层设备就绪事件 (自动解锁按钮)
         // ==========================================
         socket.on('device_ready', () => {
+
+
             // 1. 解锁写卡按钮 (变绿)
             btn.disabled = false;
             btn.style.background = '#28a745'; 
@@ -83,6 +100,20 @@
                 btnList.disabled = false;
                 btnList.style.background = '#6f42c1';
                 btnList.style.cursor = 'pointer';
+            }
+           
+            // 4. 解锁通知管理按钮
+            const btnNL = document.getElementById('btnNotifList');
+            if (btnNL) { 
+                btnNL.disabled = false; 
+                btnNL.style.background = '#fd7e14'; 
+                btnNL.style.cursor = 'pointer'; 
+            }
+            const btnNP = document.getElementById('btnNotifProcessAll');
+            if (btnNP) { 
+                btnNP.disabled = false; 
+                btnNP.style.background = '#28a745'; 
+                btnNP.style.cursor = 'pointer'; 
             }
 
             terminal.textContent += "✅ [系统探测] 侦测到 ESP32 设备已打通底层隧道，随时可以执行操作！\n";
@@ -104,6 +135,19 @@
             const btnList = document.getElementById('btnList');
             if (btnList) { btnList.disabled = true; btnList.style.background = '#999'; btnList.style.cursor = 'not-allowed'; }
 
+            const btnNL = document.getElementById('btnNotifList');
+            if (btnNL) { 
+                btnNL.disabled = true; 
+                btnNL.style.background = '#999'; 
+                btnNL.style.cursor = 'not-allowed'; 
+            }
+            const btnNP = document.getElementById('btnNotifProcessAll');
+            if (btnNP) { 
+                btnNP.disabled = true; 
+                btnNP.style.background = '#999'; 
+                btnNP.style.cursor = 'not-allowed'; 
+            }
+
             terminal.textContent += "⚠️ [系统探测] 侦测到 ESP32 设备已断开隧道，控制台已自动锁定。\n";
             terminal.scrollTop = terminal.scrollHeight;
         });
@@ -124,7 +168,7 @@
         }
 
         // ==========================================
-        // 【新增】：触发查询 EID 和 配置列表
+        // 【新增】：触发查询 EID 和 配置列表 和 通知等
         // ==========================================
         function getEid() {
             terminal.textContent += "\n🔍 正在请求读取芯片信息...\n";
@@ -136,6 +180,31 @@
             terminal.textContent += "\n📋 正在请求 eSIM 配置列表...\n";
             terminal.scrollTop = terminal.scrollHeight;
             socket.emit('run_cmd', 'list'); // 呼叫后端执行 profile list
+        }
+
+        function getNotifList() {
+            terminal.textContent += "\n🔔 正在请求查询待处理通知...\n";
+            terminal.scrollTop = terminal.scrollHeight;
+            socket.emit('run_cmd', 'notiflist'); 
+        }
+
+        function processAllNotifs() {
+            if(confirm('确定要尝试向运营商上报并处理所有堆积的通知吗？')) {
+                terminal.textContent += "\n🚀 正在一键处理所有通知...\n";
+                socket.emit('run_cmd', 'notifprocess'); 
+            }
+        }
+
+        function processSingleNotif(seq) {
+            terminal.textContent += `\n🚀 正在上报处理单条通知 (SEQ: ${seq})...\n`;
+            socket.emit('run_cmd', { cmdType: 'notifprocess', params: { seq: seq } }); 
+        }
+
+        function removeNotif(seq) {
+            if(confirm(`⚠️ 警告：强行删除 SEQ ${seq} 可能会导致运营商后台状态不同步（比如无法退款或携号转网）。确定强制删除吗？`)) {
+                terminal.textContent += `\n🗑️ 正在强行抹除通知 (SEQ: ${seq})...\n`;
+                socket.emit('run_cmd', { cmdType: 'notifremove', params: { seq: seq } }); 
+            }
         }
 
         // ==========================================
@@ -159,6 +228,8 @@
             else if (result.cmdType === 'list') {
                 const profiles = data;
                 let html = '<div style="display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));">';
+                
+
                 
                 profiles.forEach(p => {
                     // profileState: 1 是启用，0 是禁用 (新版 lpac 返回的可能是 'enabled' / 'disabled'，做个双重兼容)
@@ -189,6 +260,52 @@
                 });
                 html += '</div>';
                 ui.innerHTML = html;
+            }
+
+            else if (result.cmdType === 'notiflist') {
+                const notifs = data;
+                if (!notifs || notifs.length === 0) {
+                    document.getElementById('notifTableContainer').innerHTML = '<div style="text-align: center; color: #28a745; font-weight: bold; padding: 20px 0;">🎉 当前没有任何待处理的通知，芯片非常健康！</div>';
+                    return;
+                }
+                
+                let html = `
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                    <thead style="background: #f8f9fa;">
+                        <tr>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd;">SEQ</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd;">操作类型</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd;">目标服务器(RSP)</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd;">ICCID</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                    
+                notifs.forEach(n => {
+                let opName = "未知操作";
+                const op = n.profileManagementOperation;
+                
+                // 【修复】：同时兼容数字和字符串格式
+                if (op === 1 || op === 'install') opName = "下载 (Install)";
+                else if (op === 2 || op === 'enable') opName = "启用 (Enable)";
+                else if (op === 3 || op === 'disable') opName = "禁用 (Disable)";
+                else if (op === 4 || op === 'delete') opName = "删除 (Delete)";
+                    
+                    html += `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 10px;"><b>${n.seqNumber}</b></td>
+                        <td style="padding: 10px;"><span style="background: #e9ecef; padding: 3px 8px; border-radius: 4px;">${opName}</span></td>
+                        <td style="padding: 10px; color: #0070f3;">${n.notificationAddress || '-'}</td>
+                        <td style="padding: 10px; font-family: monospace; color: #555;">${n.iccid || '-'}</td>
+                        <td style="padding: 10px; text-align: right;">
+                            <button onclick="processSingleNotif(${n.seqNumber})" style="padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight:bold;">上报</button>
+                            <button onclick="removeNotif(${n.seqNumber})" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px; font-weight:bold;">强删</button>
+                        </td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+                document.getElementById('notifTableContainer').innerHTML = html;
             }
         });
         // 【新增】监听后端发来的“操作完成”信号，精准刷新列表
