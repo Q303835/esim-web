@@ -22,14 +22,14 @@ COPY . .
 # 6. 多架构处理并清理冗余文件
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        mv lpac-amd64 lpac; \
+        mv lpac-linux-amd64 lpac; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        mv lpac-arm64 lpac; \
+        mv lpac-linux-arm64 lpac; \
     else \
         echo "Unsupported architecture: $TARGETARCH" && exit 1; \
     fi && \
     chmod +x lpac && \
-    rm -f lpac-amd64 lpac-arm64
+    rm -f lpac-linux-amd64 lpac-linux-arm64
 
 # 7. 配置底层引擎的环境变量
 ENV LPAC_APDU=at
