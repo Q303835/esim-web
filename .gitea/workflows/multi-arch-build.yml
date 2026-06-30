@@ -2,7 +2,6 @@ name: Native Distributed Multi-Arch Build
 
 on:
   push:
-    # 不再每次 push 代码都打包，而是只在推送 v 开头的标签（如 v1.0, v1.1.2）时才触发
     tags:
       - 'v*'
 
@@ -24,10 +23,9 @@ jobs:
           context: .
           push: true
           provenance: false
-          # 同时推送两个标签：动态版本号-amd64 和 amd64-latest
           tags: |
-            q303835/test:${{ github.ref_name }}-amd64
-            q303835/test:amd64-latest
+            q303835/esim-web:${{ github.ref_name }}-amd64
+            q303835/esim-web:amd64-latest
 
   # 任务 2：派发给你的美国 ARM 服务器
   build-arm64:
@@ -46,15 +44,14 @@ jobs:
           context: .
           push: true
           provenance: false
-          # 同时推送两个标签：动态版本号-arm64 和 arm64-latest
           tags: |
-            q303835/test:${{ github.ref_name }}-arm64
-            q303835/test:arm64-latest
+            q303835/esim-web:${{ github.ref_name }}-arm64
+            q303835/esim-web:arm64-latest
 
-  # 任务 3：合并多架构清单
+  # 任务 3：合并多架构清单（指定由性能强悍的 ARM 机器接管收尾）
   create-manifest:
     needs: [build-amd64, build-arm64]
-    runs-on: ubuntu-latest
+    runs-on: arm64
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -63,14 +60,14 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create and push Multi-Arch manifest
         run: |
-          # 1. 创建并推送指定版本号 (例如 v1.0) 的双架构合并清单
-          docker manifest create q303835/test:${{ github.ref_name }} \
-            q303835/test:${{ github.ref_name }}-amd64 \
-            q303835/test:${{ github.ref_name }}-arm64
-          docker manifest push q303835/test:${{ github.ref_name }}
+          # 1. 创建并推送指定版本号的双架构合并清单
+          docker manifest create q303835/esim-web:${{ github.ref_name }} \
+            q303835/esim-web:${{ github.ref_name }}-amd64 \
+            q303835/esim-web:${{ github.ref_name }}-arm64
+          docker manifest push q303835/esim-web:${{ github.ref_name }}
           
-          # 2. 创建并推送 latest 的双架构合并清单（保证网友 pull latest 永远是最新的）
-          docker manifest create q303835/test:latest \
-            q303835/test:amd64-latest \
-            q303835/test:arm64-latest
-          docker manifest push q303835/test:latest
+          # 2. 创建并推送 latest 的双架构合并清单
+          docker manifest create q303835/esim-web:latest \
+            q303835/esim-web:amd64-latest \
+            q303835/esim-web:arm64-latest
+          docker manifest push q303835/esim-web:latest
