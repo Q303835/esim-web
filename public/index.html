@@ -13,14 +13,15 @@
         button:hover { background: #005bb5; }
         button:disabled { background: #ccc; cursor: not-allowed; }
         /* 极客风终端样式 */
-        #terminal { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 8px; height: 400px; overflow-y: auto; margin-top: 20px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+        #terminal { background: #1e1e1e; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 8px; height: 280px; overflow-y: auto; margin-top: 20px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🚀 eSIM 云端写卡控制台</h1>
-        <p style="color: #666;">请先在 ESP32 设备端点击“进入透传模式”，然后在此粘贴运营商提供的激活码。</p>
+        <p style="color: #666;">请先在 ESP32 设备端点击“进入透传模式”，然后在下方输入框粘贴运营商提供的LPA:1$激活码。</p>
         
+        <div id="terminal" style="margin-bottom: 20px;">等待指令...</div>
         <div class="input-group">
             <input type="text" id="activationCode" placeholder="LPA:1$sm-dp-plus.com$XXXX-XXXX-XXXX">
         </div>
@@ -48,7 +49,6 @@
         </div>
 
 
-        <div id="terminal">等待指令...</div>
     </div>
 
 <script src="/socket.io/socket.io.js"></script>
