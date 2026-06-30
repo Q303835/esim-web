@@ -1,0 +1,68 @@
+name: Native Distributed Multi-Arch Build
+
+on:
+  push:
+    branches:
+      - main # 如果你的默认分支是 master，请记得改成 master
+
+jobs:
+  # 任务 1：派发给你的日本 x86 服务器 (JP-6) 原生编译
+  build-amd64:
+    runs-on: amd64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      - name: Build and push AMD64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: q303835/test:amd64-latest
+
+  # 任务 2：派发给你的美国 ARM 服务器 (ARM64-us) 原生编译
+  build-arm64:
+    runs-on: arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      - name: Build and push ARM64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: q303835/test:arm64-latest
+
+  # 任务 3：合并多架构清单并推送到最后的标签
+  create-manifest:
+    needs: [build-amd64, build-arm64] # 必须等上面两台机器都打包完才执行
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      - name: Create and push Multi-Arch manifest
+        run: |
+          # 创建包含两个架构镜像的合并清单
+          docker manifest create q303835/test:latest \
+            q303835/test:amd64-latest \
+            q303835/test:arm64-latest
+          
+          # 将最终的清单推送到 Docker Hub 仓库
+          docker manifest push q303835/test:latest
