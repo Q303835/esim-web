@@ -22,8 +22,9 @@
         <p style="color: #666;">请先在 ESP32 设备端点击“进入透传模式”，然后在下方输入框粘贴运营商提供的LPA:1$激活码。</p>
         
         <div id="terminal" style="margin-bottom: 20px;">等待指令...</div>
-        <div class="input-group">
-            <input type="text" id="activationCode" placeholder="LPA:1$sm-dp-plus.com$XXXX-XXXX-XXXX">
+        <div class="input-group" style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="activationCode" placeholder="在此粘贴完整的 LPA:1$ 激活码" style="flex: 3; min-width: 250px;">
+            <input type="text" id="confirmCode" placeholder="确认码 (选填)" style="flex: 1; min-width: 120px;">
         </div>
         
         <div style="display: flex; gap: 10px; margin-bottom: 20px;">
@@ -154,22 +155,31 @@
         // 写卡功能
         function startDownload() {
             const code = document.getElementById('activationCode').value.trim();
+            const confirmCode = document.getElementById('confirmCode').value.trim(); // 读取确认码
+            
             if (!code) { alert('请输入激活码'); return; }
             
             terminal.textContent = "开始建立云端安全通道...\n";
             btn.disabled = true;
             btn.textContent = "正在与全球运营商通信中...";
             
-            // 把激活码发给后端，触发 lpac
+            // 构造传递给后端的参数
+            const downloadParams = { activationCode: code };
+            
+            // 如果用户填写了确认码，就一起打包发给后端
+            if (confirmCode) {
+                downloadParams.confirmCode = confirmCode;
+                terminal.textContent += `[提示] 侦测到用户输入了确认码: ${confirmCode}，将携带确认码进行下载...\n`;
+            }
+
+            // 把指令发给后端，触发 lpac
             socket.emit('run_cmd', { 
                 cmdType: 'download', 
-                params: { activationCode: code } 
+                params: downloadParams 
             });
         }
 
-        // ==========================================
         // 【新增】：触发查询 EID 和 配置列表 和 通知等
-        // ==========================================
         function getEid() {
             terminal.textContent += "\n🔍 正在请求读取芯片信息...\n";
             terminal.scrollTop = terminal.scrollHeight;
